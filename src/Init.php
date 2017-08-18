@@ -8,6 +8,8 @@ class Init
     public $conn;
     public $notorm;
 
+    public $tables;
+
     function __construct($connParams)
     {
         $this->connParams = $connParams;
@@ -17,6 +19,18 @@ class Init
         $this->conn->getDatabasePlatform()->registerDoctrineTypeMapping('enum', 'string');
 
         $this->notorm = new \NotOrm($this->conn->getWrappedConnection());
+
+        $this->reloadTable();
+    }
+
+    public function reloadTable()
+    {
+        $sm = $this->conn->getSchemaManager();
+        $tables = $sm->listTableNames();
+
+        foreach ($tables as $table) {
+            $this->tables[$table] = new Table($this, $table);
+        }
     }
     
     function __call($func, $args)
