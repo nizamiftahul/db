@@ -6,172 +6,150 @@ class Table {
 
     public $init;
     public $sm;
+    public $command;
     public $table;
+    public $childs = [];
 
     public function __construct($init, $table) 
     {
         $this->init = $init;
         $this->sm = $this->init->conn->getSchemaManager();
+        $this->command = $this->init->notorm;
         $this->table = $table;
     }
 
-    public static function create($app, $params)
+    public static function create($app, string $tableName, array $columns, array $indexes=[], array $parents=[], $idGeneratorType = 0, array $options=[])
     {
         $sm = $app->db->conn->getSchemaManager();
-
-        $name = $params['tableName'];
-        $arrColumns = $params['columns'];
-        $primaryKey = $params['primaryKey'];
-        $arrIndexes = $params['indexes'];
-        $arrForeignKeys = $params['foreignKeys'];;
-        $idGenerator = $params['idGenerator'];
-        $options = $params['options'];
-
-        $columns = [];
-        foreach ($arrColumns as $column) {
-            $columns[] = Table::setColumn($column);
-        }
-
-        $indexes = [];
-        foreach ($arrIndexes as $index) {
-            $indexes[] = Table::setIndex($index);
-        }
         
-        $foreignKeys = [];
-        foreach ($arrForeignKeys as $foreignKey) {
-            $foreignKeys[] = Table::setForeignKey($foreignKey);
-        }
-    
-        $table = new \Doctrine\DBAL\Schema\Table($name, $columns, $indexes, $foreignKeys, $idGenerator, $options);
+        $columns = Column::setMultiple($columns);
+        $indexes = Index::setMultiple($indexes);
+        $parents = ForeignKey::setMultiple($parents);
 
-        if (!empty($primaryKey)) {
-            $table->setPrimaryKey($primaryKey);
-        }
-
-        $app->db->conn->beginTransaction();
-        try {
-            $sm->createTable($table);
-        } catch (\Exception $e) {
-            $app->db->conn->rollBack();
-            echo \Doctrine\DBAL\Schema\SchemaException::tableAlreadyExists($params['tableName'])->getMessage();
-        }
-
+        $table = new \Doctrine\DBAL\Schema\Table($tableName, $columns, $indexes, $parents, $idGenerator, $options);
+        
+        return $sm->createTable($table);
     }
 
-    public function alter($params)
+    public function alter($tableName, array $addColumns = [], array $changeColumns = [], array $removeColumns = [], $addedIndexes = [], $addedParents = [])
     {
-        $tableName = $params['tableName'];
-        $arrAddColumns = $params['addColumns'];
-        $arrChangeColumns = $params['changeColumns'];
-        $arrRemoveColumns = $params['removeColumns'];
-        $arrAddIndexes = $params['addIndexes'];
-        $arrChangeIndexes = $params['changeIndexes'];
-        $arrRemoveIndexes = $params['removeIndexes'];
         $refTable = $this->sm->listTableDetails($this->table);
-
-        $addColumns = [];
-        foreach ($arrAddColumns as $column) {
-            $addColumns[] = Table::setColumn($column);
-        }
-
-        $changeColumns = [];
-        foreach ($arrChangeColumns as $column) {
-            $changeColumns[] = Table::setColumnDiff($column);
-        }
-
-        $removeColumns = [];
-        foreach ($arrRemoveColumns as $column) {
-            $removeColumns[] = Table::setColumn($column);
-        }
-
-        $addIndexes = [];
-        foreach ($arrAddIndexes as $index) {
-            $addIndexes[] = Table::setIndex($index);
-        }
-
-        $changeIndexes = [];
-        foreach ($arrChangeIndexes as $index) {
-            $changeIndexes[] = Table::setIndex($index);
-        }
-
-        $removeIndexes = [];
-        foreach ($arrRemoveIndexes as $index) {
-            $removeIndexes[] = Table::setIndex($index);
-        }
-
-        $tableDiff = new \Doctrine\DBAL\Schema\TableDiff($tableName, $addColumns, $changeColumns, $removeColumns,
-            $addIndexes, $changeIndexes, $removeIndexes);
         
-        $this->init->conn->beginTransaction();
-        try {
-            $sm->createTable($table);
-        } catch (\Exception $e) {
-            $this->init->conn->rollBack();
-            var_dump($e);
+        $addColumns = $this->addColumns($addColumns);
+        $changeColumns = $this->changeColumns($changeColumns);
+        $removeColumns = $this->removeColumns($removeColumns);
+        $addedIndexes = Index::setMultiple($addedIndexes);
+
+        foreach ($addedIndexes as $k => $primary) {
+            if ($primary->isPrimary()) {
+                $addedIndexes['primary'] = $primary;
+                unset($addedIndexes[$k]);
+            }
         }
-        return $this->sm->alterTable($tableDiff);
-    }
 
-    public static function setColumn($column)
-    {
-        $name = $column['name'];
-        $type = \Doctrine\DBAL\Types\Type::getType($column['type']);
-        $options = $column['options'];
-
-        return new \Doctrine\DBAL\Schema\Column($name, $type, $options);
-    }
-
-    public static function setColumnDiff($columnDiff)
-    {
-        $refColumn = $columnDiff['refColumn'];
-        $newColumn = $columnDiff['newColumn'];
-        $column = Table::setColumn($newColumn);
-
-        return new \Doctrine\DBAL\Schema\ColumnDiff($refColumn, $column);
-    }
-
-    public static function setIndex($index)
-    {
-        $name = $index['name'];
-        $columns = $index['columns'];
-        $isUnique = $index['isUnique'];
-        $isPrimary = $index['isPrimary'];
-        $flags = $index['flags'];
-        $options = $index['options'];
-
-        return new \Doctrine\DBAL\Schema\Index($name, $columns, $isUnique, $isPrimary, $flags, $options);
-    }
-
-    public static function setForeignKey($fk)
-    {
-        $column = $fk['columns'];
-        $refTable = $fk['refTable'];
-        $refColumns = $fk['refColumns'];
-        $name = $fk['name'];
-        $options = $fk['options'];
-
-        return new \Doctrine\DBAL\Schema\ForeignKeyConstraint($column, $refTable, $refColumns, $name, $options);
-    }    
-
-    public function addIndexes($indexes)
-    {
-        foreach ($indexes as $index) {
-            $this->sm->createIndex(Index::init($index), $this->table);
+        $tableDiff = new \Doctrine\DBAL\Schema\TableDiff($tableName, $addColumns, $changeColumns, $removeColumns, $addedIndexes, $changedIndexes = [], $removedIndexes = [], $refTable);
+        $this->sm->alterTable($tableDiff);
+        
+        foreach ($addedParents as $parent) {
+            $this->createParent($parent);
         }
+        if (!empty($addedParents)) $this->unsetChild();
+
+        return;
     }
 
-    public function addForeignKeys($foreignKeys)
+    public function rename($newName)
     {
-        foreach ($foreignKeys as $foreignKey) {
-            $this->sm->createForeignKey(ForeignKey::init($foreignKey), $this->table);
-        }
+        $this->sm->renameTable($this->table, $newName);
     }
+
+    public function drop()
+    {
+        $this->unsetChild();
+        return $this->sm->dropTable($this->table);
+    }
+
+    // columns
+
+    public function addColumns($columns)
+    {
+        return Column::setMultiple($columns);
+    }
+
+    public function changeColumns($columns)
+    {
+        $result = [];
+        foreach ($columns as $column) {
+            $result[] = Column::setDiff($column);
+        }
+
+        return $result;
+    }
+
+    public function removeColumns($columns)
+    {
+        return Column::setMultiple($columns);
+    }
+
+    // index
+
+    public function createIndex($index)
+    {
+        $index = Index::set($index);
+        return $this->sm->createIndex($index, $this->table);
+    }
+
+    public function changeIndex($index)
+    {
+        $index = Index::set($index);
+        return $this->sm->dropAndCreateIndex($index, $this->table);
+    }
+
+    public function renameIndex($oldName, $newName)
+    {
+        return;
+    }
+
+    public function dropIndex($index)
+    {
+        $index = Index::set($index);
+        return $this->sm->dropIndex($index, $this->table);
+    }
+
+    // foreign key
+
+    public function createParent($fk)
+    {
+        $this->unsetChild();
+        $fk = ForeignKey::set($fk);
+        return $this->sm->CreateForeignKey($fk, $this->table);
+    }
+
+    public function changeParent($fk)
+    {
+        $this->unsetChild();
+        $fk = ForeignKey::set($fk);
+        return $this->sm->dropAndCreateForeignKey($fk, $this->table);
+    }
+
+    public function renameParent($oldName, $newName)
+    {
+        return;
+    }
+
+    public function dropParent($fk)
+    {
+        $this->unsetChild();
+        $fk = ForeignKey::set($fk);
+        return $this->sm->dropForeignKey($fk, $this->table);
+    }
+
+    // structure
 
     public function getColumns()
     {
         $columns = $this->sm->listTableColumns($this->table);
         $result = [];
-
         foreach ($columns as $column) {
             $result[] = [
                 'name'          => $column->getName(),
@@ -185,14 +163,12 @@ class Table {
 
             ];
         }
-
         return $result;
     }
 
     public function getIndexes()
     {
         $indexes = $this->sm->listTableIndexes($this->table);
-        
         $result = [];
         foreach ($indexes as $index) {
             if ($index->isPrimary()) {
@@ -204,21 +180,43 @@ class Table {
             }
 
             $result[] = [
+                'name' => $index->getName(),
                 'column' => $index->getColumns()[0],
                 'type'   => $type
             ];
         }
-
         return $result;
     }
 
-    public function getForeignKeys()
+    public function unsetChild()
+    {
+        $this->childs = [];
+    }
+
+    public function getChilds()
+    {
+        if (empty($this->childs)) {
+            $tables = $this->sm->listTableNames();
+            foreach ($tables as $table) {
+                $parents = $this->sm->listTableForeignKeys($table);
+                foreach ($parents as $parent) {
+                    if ($parent->getForeignTableName() == $this->table) {
+                        $this->childs[$table] = $parent->getColumns();
+                    }
+                }
+            }
+        }
+        return $this->childs;
+    }
+
+    public function getParents()
     {
         $foreignKeys = $this->sm->listTableForeignKeys($this->table);
         
         $result = [];
         foreach ($foreignKeys as $foreignKey) {
             $result[] = [
+                'name'       => $foreignKey->getname(),
                 'column'     => $foreignKey->getColumns()[0],
                 'refTable'   => $foreignKey->getForeignTableName(),
                 'refColumns' => $foreignKey->getForeignColumns()[0],
@@ -230,4 +228,46 @@ class Table {
         return $result;
     }
 
+    // data
+
+    public function select($params)
+    {
+        $select = $params['select'];
+        $where = $params['where'];
+        $order = $params['order'];
+        $group = $params['group'];
+        $limit = $params['limit'];
+
+        $result = $this->init->notorm->{$this->table}()
+            ->select($select)
+            ->group($group)
+            ->order($order);
+        
+        if ($where['conditions'] != "" and !empty($where['params'])) {
+            $result->where($where['conditions'], $where['params']);
+        }
+        
+        if ($limit != "") {
+            $result->limit($limit);
+        }
+
+        return $result;
+    }
+
+    public function insert($value)
+    {
+        return $this->init->notorm->{$this->table}()->insert($value);
+    }
+
+    public function update($value, $where)
+    {
+        $update = $this->init->notorm->{$this->table}()->where($where['conditions'], $where['params']);
+        return $update->update($value);
+    }
+
+    public function delete($where)
+    {
+        $delete = $this->init->notorm->{$this->table}()->where($where['conditions'], $where['params']);
+        return $delete->delete();
+    }
 }

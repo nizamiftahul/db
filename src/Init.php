@@ -20,14 +20,29 @@ class Init
 
         $this->notorm = new \NotOrm($this->conn->getWrappedConnection());
 
-        $this->reloadTable();
+        $this->reloadTables();
     }
 
-    public function reloadTable()
+    public static function listDb($base)
+    {
+        $settings = get_object_vars($base->settings);
+        $result = [];
+        foreach ($settings as $k => $s) {
+            if (is_object($s)) {
+                if (get_class($s) === 'Plansys\Db\Init') {
+                    $result[$k] = $s;
+                }
+            }
+        }
+
+        return $result;
+    }
+
+    public function reloadTables()
     {
         $sm = $this->conn->getSchemaManager();
         $tables = $sm->listTableNames();
-
+        $this->tables = [];
         foreach ($tables as $table) {
             $this->tables[$table] = new Table($this, $table);
         }
