@@ -112,7 +112,6 @@ class Table {
 
     public function dropIndex($index)
     {
-        $index = Index::set($index);
         return $this->sm->dropIndex($index, $this->table);
     }
 
@@ -140,7 +139,6 @@ class Table {
     public function dropParent($fk)
     {
         $this->unsetChild();
-        $fk = ForeignKey::set($fk);
         return $this->sm->dropForeignKey($fk, $this->table);
     }
 

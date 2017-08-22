@@ -44,21 +44,21 @@ class Table extends \Yard\Page {
                 break;
 
             case 'dropIndex':
-                $app->db->tables[$table]->dropIndex($params['index']);
+                $app->db->tables[$table]->dropIndex($params['indexName']);
                 break;
             
             case 'createParent':
-                $child = $params['parent'];
+                $parent = $params['parent'];
                 $app->db->tables[$table]->createParent($parent);
                 break;
 
             case 'changeParent':
-                $child = $params['parent'];
+                $parent = $params['parent'];
                 $app->db->tables[$table]->changeParent($parent);
                 break;
             
             case 'dropParent':
-                $parent = $params['parent'];
+                $parent = $params['parentName'];
                 $app->db->tables[$table]->dropParent($parent);
                 break;
             

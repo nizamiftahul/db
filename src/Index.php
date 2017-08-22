@@ -6,7 +6,7 @@ class Index {
 
     public static function set($index)
     {
-        $name      = isset($index['name']) ? $index['name'] : "" ;
+        $name      = isset($index['name']) ? $index['name'] : "idx_".implode("_", $index['columns']) ;
         $columns   = $index['columns'];
         $isUnique  = isset($index['isUnique']) ? true : false;
         $isPrimary = isset($index['isPrimary']) ? true : false;

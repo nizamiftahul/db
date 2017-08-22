@@ -11,6 +11,7 @@ class ForeignKey {
         $refColumns = $foreignKey['refColumns'];
         $name       = isset($foreignKey['name']) ? $foreignKey['name'] : null;
         $options    = isset($foreignKey['options']) ? $foreignKey['options'] : [];
+        var_dump($foreignKey);
         return new \Doctrine\DBAL\Schema\ForeignKeyConstraint($column, $refTable, $refColumns, $name, $options);
     }
 
